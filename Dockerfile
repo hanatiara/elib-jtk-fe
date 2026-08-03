@@ -23,7 +23,10 @@ RUN npm run build
 FROM composer:2.7 AS vendor
 
 WORKDIR /app
-COPY composer.json composer.lock ./
+COPY composer.json ./
+# Only copy composer.lock if it exists
+COPY composer.lock* ./
+
 RUN composer install \
     --no-dev \
     --no-interaction \
