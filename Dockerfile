@@ -34,7 +34,7 @@ RUN composer dump-autoload --optimize
 # ==========================================
 # Stage 3: Production Apache/PHP Runtime
 # ==========================================
-FROM php:8.3-apache AS production
+FROM php:8.5-apache AS production
 
 # 1. Install Linux system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
