@@ -8,7 +8,7 @@ COPY package.json package-lock.json* ./
 RUN npm install
 
 COPY . .
-# Laravel Mix uses 'production' script to compile assets
+# Laravel Mix production asset compilation script
 RUN npm run production
 
 # ==========================================
@@ -32,7 +32,7 @@ COPY . .
 RUN composer dump-autoload --optimize
 
 # ==========================================
-# Stage 3: Production Apache/PHP Runtime
+# Stage 3: Production Apache/PHP 8.5 Runtime
 # ==========================================
 FROM php:8.5-apache AS production
 
@@ -80,11 +80,8 @@ COPY . /var/www/html
 COPY --from=vendor /app/vendor /var/www/html/vendor
 
 # 7. Copy compiled frontend assets from Laravel Mix (Stage 1)
-# Laravel Mix typically outputs compiled files to public/css and public/js
 COPY --from=frontend /app/public/css /var/www/html/public/css
 COPY --from=frontend /app/public/js /var/www/html/public/js
-# If you compile fonts or images into public, copy those too if needed:
-# COPY --from=frontend /app/public/images /var/www/html/public/images
 
 # 8. Setup persistent storage permissions for www-data (UID 33)
 RUN mkdir -p /var/www/html/storage/framework/{sessions,views,cache} \
