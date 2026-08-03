@@ -1,94 +1,53 @@
-# ==========================================
-# Stage 1: Build Frontend Assets (Node/Mix/Tailwind)
-# ==========================================
-FROM node:20-alpine AS frontend
+# Use official PHP image with Apache
+FROM php:8.5-apache
 
-WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm install
+# Set working directory
+WORKDIR /var/www/html
 
-COPY . .
-# Laravel Mix production asset compilation script
-RUN npm run production
-
-# ==========================================
-# Stage 2: Install Composer Dependencies
-# ==========================================
-FROM composer:2.7 AS vendor
-
-WORKDIR /app
-COPY composer.json ./
-COPY composer.lock* ./
-
-RUN composer install \
-    --no-dev \
-    --no-interaction \
-    --no-plugins \
-    --no-scripts \
-    --prefer-dist \
-    --ignore-platform-reqs
-
-COPY . .
-RUN composer dump-autoload --optimize
-
-# ==========================================
-# Stage 3: Production Apache/PHP 8.5 Runtime
-# ==========================================
-FROM php:8.5-apache AS production
-
-# 1. Install Linux system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install required system dependencies, PHP extensions, AND Node.js
+RUN apt-get update && apt-get install -y \
     libpng-dev \
     libjpeg62-turbo-dev \
     libfreetype6-dev \
-    libonig-dev \
-    libxml2-dev \
     libzip-dev \
-    libicu-dev \
+    libonig-dev \
     zip \
     unzip \
+    git \
     curl \
+    gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Configure and install GD & PHP extensions
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg
-RUN docker-php-ext-install -j$(nproc) \
-    pdo_mysql \
-    mbstring \
-    exif \
-    pcntl \
-    bcmath \
-    gd \
-    intl \
-    zip \
-    opcache
-
-# 3. Enable Apache mod_rewrite
+# Enable Apache mod_rewrite for Laravel routing
 RUN a2enmod rewrite
 
-# 4. Point Apache DocumentRoot to Laravel /public
+# Change Apache document root to Laravel's public directory
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+ENV COMPOSER_MEMORY_LIMIT=-1
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
 RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
-WORKDIR /var/www/html
+# Copy Composer binary
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# 5. Copy core application code
-COPY . /var/www/html
+# Copy ALL application files first so Vite and Composer have access to everything
+COPY . .
 
-# 6. Copy compiled vendor files from Stage 2
-COPY --from=vendor /app/vendor /var/www/html/vendor
+# Install PHP dependencies (Added --ignore-platform-reqs here)
+RUN composer install --no-interaction --optimize-autoloader --no-dev --no-scripts --ignore-platform-reqs
 
-# 7. Copy compiled frontend assets from Laravel Mix (Stage 1)
-COPY --from=frontend /app/public/css /var/www/html/public/css
-COPY --from=frontend /app/public/js /var/www/html/public/js
+# Install Node dependencies and build Vite/Mix assets
+RUN npm install && npm run production
 
-# 8. Setup persistent storage permissions for www-data (UID 33)
+# Set permissions for storage and bootstrap/cache
 RUN mkdir -p /var/www/html/storage/framework/{sessions,views,cache} \
-    /var/www/html/storage/logs \
-    /var/www/html/bootstrap/cache \
-    && chown -R www-data:www-data /var/www/html \
+    && mkdir -p /var/www/html/storage/logs \
+    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
     && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
+# Expose port 80 inside the container
 EXPOSE 80
-CMD ["apache2-foreground"]

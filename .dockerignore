@@ -12,3 +12,9 @@
 /Dockerfile
 /phpunit.xml
 /tests
+node_modules
+vendor
+.git
+.github
+storage/*.key
+.env
