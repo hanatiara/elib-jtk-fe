@@ -68,18 +68,18 @@ jobs:
             docker rm elib-jtk-fe || true
 
             # Ensure host storage folders exist in /www/ with proper permissions (UID 33 is www-data)
-            mkdir -p /www/elib_jtk_be/storage/framework/{sessions,views,cache}
-            mkdir -p /www/elib_jtk_be/storage/logs
-            sudo chown -R 33:33 /www/elib_jtk_be/storage
-            sudo chmod -R 775 /www/elib_jtk_be/storage
+            mkdir -p /www/elib_jtk_fe/storage/framework/{sessions,views,cache}
+            mkdir -p /www/elib_jtk_fe/storage/logs
+            sudo chown -R 33:33 /www/elib_jtk_fe/storage
+            sudo chmod -R 775 /www/elib_jtk_fe/storage
 
-            # Run container with persistent volume mapped to /www/elib_jtk_be/storage
+            # Run container with persistent volume mapped to /www/elib_jtk_fe/storage
             # Note: Using port 8080 on the host (change to 8081, 8082, etc. if 8080 is already taken)
             docker run -d \
               --name elib-jtk-fe \
               -p 127.0.0.1:8082:80 \
-              --env-file /www/elib_jtk_be/.env \
-              -v /www/elib_jtk_be/storage:/var/www/html/storage \
+              --env-file /www/elib_jtk_fe/.env \
+              -v /www/elib_jtk_fe/storage:/var/www/html/storage \
               --restart unless-stopped \
               $IMAGE_URL
 
