@@ -9,7 +9,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Installs all dependencies (including -D devDependencies like Tailwind)
-RUN npm ci
+RUN npm install
 
 # Copy the rest of your app code (resources/css, resources/js, vite.config.js, etc.)
 COPY . .
