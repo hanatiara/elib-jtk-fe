@@ -1,21 +1,15 @@
 # ==========================================
-# Stage 1: Build Frontend Assets (Node/Vite with Tailwind)
+# Stage 1: Build Frontend Assets (Node/Mix/Tailwind)
 # ==========================================
 FROM node:20-alpine AS frontend
 
 WORKDIR /app
-
-# Copy package files first to leverage Docker layer caching
-COPY package.json package-lock.json ./
-
-# Installs all dependencies (including -D devDependencies like Tailwind)
+COPY package.json package-lock.json* ./
 RUN npm install
 
-# Copy the rest of your app code (resources/css, resources/js, vite.config.js, etc.)
 COPY . .
-
-# Compiles assets using Vite (Tailwind, JS, CSS)
-RUN npm run build
+# Laravel Mix uses 'production' script to compile assets
+RUN npm run production
 
 # ==========================================
 # Stage 2: Install Composer Dependencies
@@ -24,7 +18,6 @@ FROM composer:2.7 AS vendor
 
 WORKDIR /app
 COPY composer.json ./
-# Only copy composer.lock if it exists
 COPY composer.lock* ./
 
 RUN composer install \
@@ -83,11 +76,17 @@ WORKDIR /var/www/html
 # 5. Copy core application code
 COPY . /var/www/html
 
-# 6. Copy compiled vendor files and built Tailwind/Vite assets from previous stages
+# 6. Copy compiled vendor files from Stage 2
 COPY --from=vendor /app/vendor /var/www/html/vendor
-COPY --from=frontend /app/public/build /var/www/html/public/build
 
-# 7. Setup persistent storage permissions for www-data (UID 33)
+# 7. Copy compiled frontend assets from Laravel Mix (Stage 1)
+# Laravel Mix typically outputs compiled files to public/css and public/js
+COPY --from=frontend /app/public/css /var/www/html/public/css
+COPY --from=frontend /app/public/js /var/www/html/public/js
+# If you compile fonts or images into public, copy those too if needed:
+# COPY --from=frontend /app/public/images /var/www/html/public/images
+
+# 8. Setup persistent storage permissions for www-data (UID 33)
 RUN mkdir -p /var/www/html/storage/framework/{sessions,views,cache} \
     /var/www/html/storage/logs \
     /var/www/html/bootstrap/cache \
