@@ -1,0 +1,100 @@
+name: Deploy Laravel to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy-to-vps:
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to VPS via SSH Password
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            # Log in to GitHub Container Registry on VPS
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Lowercase image path
+            IMAGE_URL=$(echo "ghcr.io/${{ env.IMAGE_NAME }}:main" | tr '[:upper:]' '[:lower:]')
+
+            # Pull latest image
+            docker pull $IMAGE_URL
+
+            # Stop and remove existing container
+            docker stop elib-jtk-fe || true
+            docker rm elib-jtk-fe || true
+
+            # Ensure host storage folders exist in /www/ with proper permissions (UID 33 is www-data)
+            mkdir -p /www/elib_jtk_be/storage/framework/{sessions,views,cache}
+            mkdir -p /www/elib_jtk_be/storage/logs
+            sudo chown -R 33:33 /www/elib_jtk_be/storage
+            sudo chmod -R 775 /www/elib_jtk_be/storage
+
+            # Run container with persistent volume mapped to /www/elib_jtk_be/storage
+            # Note: Using port 8080 on the host (change to 8081, 8082, etc. if 8080 is already taken)
+            docker run -d \
+              --name elib-jtk-fe \
+              -p 127.0.0.1:8082:80 \
+              --env-file /www/elib_jtk_be/.env \
+              -v /www/elib_jtk_be/storage:/var/www/html/storage \
+              --restart unless-stopped \
+              $IMAGE_URL
+
+            # Double-check permissions on the running container
+            docker exec elib-jtk-fe chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+            docker exec elib-jtk-fe chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+
+            # Run Laravel maintenance & optimization commands
+            docker exec elib-jtk-fe php artisan config:clear
+            docker exec elib-jtk-fe php artisan cache:clear
+            docker exec elib-jtk-fe php artisan view:clear
+            docker exec elib-jtk-fe php artisan optimize:clear
+            docker exec elib-jtk-fe php artisan route:clear
+
+            # Uncomment below if you want to run migrations automatically on deploy
+            # docker exec elib-jtk-fe php artisan migrate --force
+
+            # Clean up old unused Docker images
+            docker system prune -af
